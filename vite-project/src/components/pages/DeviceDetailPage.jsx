@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchLogs } from '../../lib/api'
+import { fetchDevices, fetchLogs } from '../../lib/api'
 import { STATUS_ENTRIES, statusLabel } from '../../lib/status'
 import DateRangePicker from '../DateRangePicker'
+import StatCard from '../StatCard'
+import RefreshBar from '../RefreshBar'
 
 const ACTIVE_OPTIONS = [
   { value: 'all', label: '전체' },
   { value: 'active', label: '진행중' },
   { value: 'cleared', label: '해제됨' },
 ]
+
+const POLL_INTERVAL_MS = 30_000
 
 function formatDateTime(iso) {
   if (!iso) return '-'
@@ -20,30 +24,43 @@ export default function DeviceDetailPage() {
   const [page, setPage] = useState(1)
   const [logs, setLogs] = useState([])
   const [pagination, setPagination] = useState(null)
+  const [device, setDevice] = useState(null)
+  const [deviceChecked, setDeviceChecked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(null)
 
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [activeFilter, setActiveFilter] = useState('all')
 
-  useEffect(() => {
-    let cancelled = false
+  const load = useCallback(async () => {
     setLoading(true)
-    setError(null)
-    fetchLogs({ mac, page, limit: 100 })
-      .then((res) => {
-        if (cancelled) return
-        setLogs(res.data)
-        setPagination(res.pagination)
-      })
-      .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
+    try {
+      const [devicesRes, logsRes] = await Promise.all([
+        fetchDevices(),
+        fetchLogs({ mac, page, limit: 100 }),
+      ])
+      const matched = devicesRes.data.find((d) => d.mac_address === mac)
+      setDevice(matched ?? null)
+      setDeviceChecked(true)
+      setLogs(logsRes.data)
+      setPagination(logsRes.pagination)
+      setError(null)
+      setLastUpdated(new Date())
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
     }
   }, [mac, page])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [load])
 
   const filtered = useMemo(() => {
     const startBound = startDate ? new Date(`${startDate}T00:00:00`) : null
@@ -67,7 +84,8 @@ export default function DeviceDetailPage() {
     return { total, active, cleared: total - active }
   }, [filtered])
 
-  const serial = logs[0]?.serial
+  const serial = device?.serial ?? logs[0]?.serial
+  const isUnregistered = deviceChecked && !device && logs.length === 0
 
   const resetFilters = () => {
     setStartDate('')
@@ -76,14 +94,43 @@ export default function DeviceDetailPage() {
     setActiveFilter('all')
   }
 
+  if (isUnregistered && !loading && !error) {
+    return (
+      <section>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← 기기 목록으로
+        </Link>
+        <div className="mt-10 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+          <div className="text-lg font-semibold text-slate-700">
+            등록되지 않은 기기입니다
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            해당 MAC 주소의 기기는 등록되어 있지 않고, 알람 이력도 없습니다.
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-400">{mac}</p>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section>
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
-      >
-        ← 기기 목록으로
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← 기기 목록으로
+        </Link>
+        <RefreshBar
+          lastUpdated={lastUpdated}
+          onRefresh={load}
+          loading={loading}
+        />
+      </div>
 
       <div className="mt-4 flex flex-wrap items-baseline gap-3">
         <h1 className="text-3xl font-bold text-slate-900">
@@ -92,7 +139,7 @@ export default function DeviceDetailPage() {
         <span className="font-mono text-sm text-slate-500">{mac}</span>
       </div>
 
-      <div className="mt-6 grid grid-cols-3 gap-3">
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="조회된 알람" value={stats.total} tone="brand" />
         <StatCard label="진행중" value={stats.active} tone="danger" />
         <StatCard label="해제됨" value={stats.cleared} tone="ok" />
@@ -152,16 +199,13 @@ export default function DeviceDetailPage() {
         </div>
       </div>
 
-      {loading && (
-        <div className="mt-6 text-sm text-slate-400">불러오는 중…</div>
-      )}
       {error && (
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           오류: {error}
         </div>
       )}
 
-      {!loading && !error && (
+      {!error && (
         <>
           <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
@@ -214,7 +258,7 @@ export default function DeviceDetailPage() {
                         colSpan={5}
                         className="px-4 py-12 text-center text-sm text-slate-400"
                       >
-                        조건에 맞는 알람이 없습니다.
+                        {loading ? '불러오는 중…' : '조건에 맞는 알람이 없습니다.'}
                       </td>
                     </tr>
                   )}
@@ -252,26 +296,6 @@ export default function DeviceDetailPage() {
         </>
       )}
     </section>
-  )
-}
-
-function StatCard({ label, value, tone }) {
-  const palette = {
-    brand: 'bg-brand-light text-brand',
-    danger: 'bg-red-50 text-red-600',
-    ok: 'bg-emerald-50 text-emerald-600',
-  }[tone]
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className="mt-2">
-        <span
-          className={`inline-flex min-w-10 justify-center rounded-lg px-2 py-0.5 text-lg font-bold ${palette}`}
-        >
-          {value}
-        </span>
-      </div>
-    </div>
   )
 }
 

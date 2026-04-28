@@ -212,10 +212,10 @@ export default function DeviceDetailPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">발생일</th>
-                    <th className="px-4 py-3 text-left font-semibold">해제일</th>
                     <th className="px-4 py-3 text-left font-semibold">상태</th>
                     <th className="px-4 py-3 text-left font-semibold">알람</th>
+                    <th className="px-4 py-3 text-left font-semibold">발생일</th>
+                    <th className="px-4 py-3 text-left font-semibold">해제일</th>
                     <th className="px-4 py-3 text-left font-semibold">IP</th>
                   </tr>
                 </thead>
@@ -225,15 +225,6 @@ export default function DeviceDetailPage() {
                       key={`${log.timestamp}-${i}`}
                       className="border-t border-slate-100 hover:bg-slate-50"
                     >
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                        {formatDateTime(log.timestamp)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
-                        {formatDateTime(log.stop_timestamp)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
-                        {statusLabel(log.status)}
-                      </td>
                       <td className="whitespace-nowrap px-4 py-3">
                         {log.active ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
@@ -246,6 +237,15 @@ export default function DeviceDetailPage() {
                             해제됨
                           </span>
                         )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
+                        {statusLabel(log.status)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                        {formatDateTime(log.timestamp)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                        {formatDateTime(log.stop_timestamp)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">
                         {log.ip_address}

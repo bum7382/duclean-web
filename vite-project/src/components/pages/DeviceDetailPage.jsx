@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchDevices, fetchLogs } from '../../lib/api'
+import { fetchDevices, fetchLogs, fetchMetrics, metricsExportUrl } from '../../lib/api'
 import { STATUS_ENTRIES, statusLabel } from '../../lib/status'
 import DateRangePicker from '../DateRangePicker'
+import MetricsChart from '../MetricsChart'
 import StatCard from '../StatCard'
 import RefreshBar from '../RefreshBar'
 
@@ -24,6 +25,7 @@ export default function DeviceDetailPage() {
   const [page, setPage] = useState(1)
   const [logs, setLogs] = useState([])
   const [pagination, setPagination] = useState(null)
+  const [metrics, setMetrics] = useState([])
   const [device, setDevice] = useState(null)
   const [deviceChecked, setDeviceChecked] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -38,15 +40,21 @@ export default function DeviceDetailPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [devicesRes, logsRes] = await Promise.all([
+      const metricsParams = { mac, limit: 1000 }
+      if (startDate) metricsParams.from = new Date(`${startDate}T00:00:00`).toISOString()
+      if (endDate) metricsParams.to = new Date(`${endDate}T23:59:59`).toISOString()
+
+      const [devicesRes, logsRes, metricsRes] = await Promise.all([
         fetchDevices(),
         fetchLogs({ mac, page, limit: 100 }),
+        fetchMetrics(metricsParams),
       ])
       const matched = devicesRes.data.find((d) => d.mac_address === mac)
       setDevice(matched ?? null)
       setDeviceChecked(true)
       setLogs(logsRes.data)
       setPagination(logsRes.pagination)
+      setMetrics(metricsRes.data)
       setError(null)
       setLastUpdated(new Date())
     } catch (e) {
@@ -54,7 +62,7 @@ export default function DeviceDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [mac, page])
+  }, [mac, page, startDate, endDate])
 
   useEffect(() => {
     load()
@@ -125,11 +133,23 @@ export default function DeviceDetailPage() {
         >
           ← 기기 목록으로
         </Link>
-        <RefreshBar
-          lastUpdated={lastUpdated}
-          onRefresh={load}
-          loading={loading}
-        />
+        <div className="flex items-center gap-2">
+          <a
+            href={metricsExportUrl({
+              mac,
+              from: startDate ? new Date(`${startDate}T00:00:00`).toISOString() : undefined,
+              to: endDate ? new Date(`${endDate}T23:59:59`).toISOString() : undefined,
+            })}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-brand hover:text-brand"
+          >
+            CSV 다운로드
+          </a>
+          <RefreshBar
+            lastUpdated={lastUpdated}
+            onRefresh={load}
+            loading={loading}
+          />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-baseline gap-3">
@@ -207,6 +227,24 @@ export default function DeviceDetailPage() {
 
       {!error && (
         <>
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <MetricsChart
+              title="차압"
+              unit="mmAq"
+              data={metrics}
+              lines={[{ dataKey: 'pressure', name: '차압', stroke: '#2563eb' }]}
+            />
+            <MetricsChart
+              title="전류"
+              unit="A"
+              data={metrics}
+              lines={[
+                { dataKey: 'current1', name: 'CT1', stroke: '#ef4444' },
+                { dataKey: 'current2', name: 'CT2', stroke: '#10b981' },
+              ]}
+            />
+          </div>
+
           <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
